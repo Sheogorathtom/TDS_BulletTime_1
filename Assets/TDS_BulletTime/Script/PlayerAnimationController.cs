@@ -27,9 +27,4 @@ public class PlayerAnimationController : MonoBehaviour
         animator.SetFloat("X", localDir.x);
         animator.SetFloat("Y", localDir.z);
     }
-
-    public void SetShooting(bool state)
-    {
-        animator.SetBool("isShooting", state);
-    }
 }
