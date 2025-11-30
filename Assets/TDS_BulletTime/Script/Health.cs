@@ -17,6 +17,20 @@ public class Health : MonoBehaviour
 
     private bool isDead = false;
 
+    // НЕУЯЗВИМОСТЬ
+    [Header("Invulnerability")]
+    [SerializeField] private bool _isInvulnerable = false;
+
+    public void SetInvulnerable(bool value)
+    {
+        _isInvulnerable = value;
+    }
+
+    public bool IsInvulnerable()
+    {
+        return _isInvulnerable;
+    }
+
     void Start()
     {
         currentHealth = maxHealth;
@@ -29,6 +43,7 @@ public class Health : MonoBehaviour
     public void TakeDamage(float damage)
     {
         if (isDead) return;
+        if (_isInvulnerable) return; // во время инвула урон не проходит
 
         currentHealth -= damage;
         OnHealthChanged?.Invoke(currentHealth);

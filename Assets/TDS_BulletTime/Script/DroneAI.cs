@@ -2,30 +2,29 @@ using UnityEngine;
 using UnityEngine.AI;
 
 /// <summary>
-/// DroneAI с NavMesh Pathfinding
-/// Дрон летает в 3D пространстве и ищет оптимальный путь вокруг препятствий
+/// Система управления дроном
+/// Дрон подлетает к игроку и парит рядом с ним на фиксированной высоте.
+/// Всегда смотрит на игрока и НЕ разворачивается по траектории движения.
 /// </summary>
-public class DroneAI_NavMesh : MonoBehaviour
+public class DroneAI : MonoBehaviour
 {
     [Header("Movement Settings")]
-    [SerializeField] private float hoverHeight = 2f; // высота парения над игроком
-    [SerializeField] private float hoverDistance = 5f; // расстояние на котором парить
-    [SerializeField] private float moveSpeed = 3.5f; // скорость движения
-    [SerializeField] private float stoppingDistance = 0.5f; // расстояние остановки
+    [SerializeField] private float fixedHeight = 3f;          // ФИКСИРОВАННАЯ высота дрона в мировых координатах (Y)
+    [SerializeField] private float hoverDistance = 5f;        // расстояние, на котором парить вокруг игрока
+    [SerializeField] private float moveSpeed = 3.5f;          // скорость движения дрона
+    [SerializeField] private float stoppingDistance = 0.5f;   // расстояние остановки
 
     [Header("Hovering Settings")]
-    [SerializeField] private float hoverSmoothing = 0.1f;
-    [SerializeField] private float hoverBobAmount = 0.3f;
-    [SerializeField] private float hoverBobSpeed = 2f;
+    [SerializeField] private float hoverSmoothing = 0.1f;     // гладкость парения
 
     [Header("Attack Settings")]
-    [SerializeField] private float attackRangeDistance = 15f;
+    [SerializeField] private float attackRangeDistance = 15f; // расстояние атаки
+    [SerializeField] private bool isAttacking = false;
 
     private Transform playerTransform;
-    private NavMeshAgent navMeshAgent;
     private Rigidbody rb;
-    private float hoverTimer = 0f;
 
+    // Состояния дрона
     private enum DroneState { Approaching, Hovering, Dead }
     private DroneState currentState = DroneState.Approaching;
 
@@ -33,24 +32,12 @@ public class DroneAI_NavMesh : MonoBehaviour
     {
         // Ищем игрока
         playerTransform = GameObject.FindGameObjectWithTag("Player")?.transform;
-        
-        // Получаем NavMeshAgent
-        navMeshAgent = GetComponent<NavMeshAgent>();
         rb = GetComponent<Rigidbody>();
 
-        if (navMeshAgent == null)
-            Debug.LogError($"{gameObject.name}: NavMeshAgent НЕ НАЙДЕН! Добавь его в Inspector!");
+        if (rb == null)
+            Debug.LogWarning($"{gameObject.name}: Rigidbody не найден!");
         if (playerTransform == null)
             Debug.LogWarning($"{gameObject.name}: Игрок не найден!");
-
-        // Настраиваем NavMeshAgent
-        if (navMeshAgent != null)
-        {
-            navMeshAgent.speed = moveSpeed;
-            navMeshAgent.stoppingDistance = stoppingDistance;
-            navMeshAgent.updateRotation = false; // Сам управляем поворотом
-            navMeshAgent.updatePosition = true;
-        }
     }
 
     void Update()
@@ -58,6 +45,7 @@ public class DroneAI_NavMesh : MonoBehaviour
         if (playerTransform == null)
             return;
 
+        // Переключение между состояниями
         switch (currentState)
         {
             case DroneState.Approaching:
@@ -69,6 +57,14 @@ public class DroneAI_NavMesh : MonoBehaviour
             case DroneState.Dead:
                 break;
         }
+
+        // Всегда смотрим на игрока
+        LookAtPlayer();
+
+        // Жёстко фиксируем высоту дрона каждый кадр
+        Vector3 pos = transform.position;
+        pos.y = fixedHeight;
+        transform.position = pos;
     }
 
     /// <summary>
@@ -76,41 +72,39 @@ public class DroneAI_NavMesh : MonoBehaviour
     /// </summary>
     private void UpdateApproaching()
     {
-        if (navMeshAgent == null || !navMeshAgent.enabled)
-            return;
+        // Целевая позиция: рядом с игроком на фиксированной высоте
+        Vector3 targetPos = playerTransform.position;
+        targetPos.y = fixedHeight;
 
-        // Целевая позиция: рядом с игроком на определённой высоте
-        Vector3 targetPos = playerTransform.position + Vector3.up * hoverHeight;
-
-        // Добавляем орбиту вокруг игрока
+        // Орбита вокруг игрока в плоскости XZ
         float angle = Mathf.Atan2(transform.position.z - playerTransform.position.z,
                                   transform.position.x - playerTransform.position.x);
-        targetPos += new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle)) * hoverDistance;
+        Vector3 orbitOffset = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle)) * hoverDistance;
+        targetPos += orbitOffset;
 
-        // Устанавливаем цель для NavMeshAgent
-        if (NavMesh.SamplePosition(targetPos, out NavMeshHit hit, 5f, NavMesh.AllAreas))
-        {
-            navMeshAgent.SetDestination(hit.position);
-        }
+        // Вычисляем расстояние до целевой позиции
+        float distanceToTarget = Vector3.Distance(new Vector3(transform.position.x, 0f, transform.position.z),
+                                                  new Vector3(targetPos.x, 0f, targetPos.z));
 
-        float distanceToTarget = Vector3.Distance(transform.position, targetPos);
-
-        // Если достаточно близко → переходим в режим парения
-        if (distanceToTarget < stoppingDistance + 1f)
+        // Если достаточно близко к точке парения → переходим в режим парения
+        if (distanceToTarget < stoppingDistance)
         {
             currentState = DroneState.Hovering;
-            hoverTimer = 0f;
             return;
         }
 
-        // Смотрим в направлении движения
-        if (navMeshAgent.velocity != Vector3.zero)
-        {
-            Quaternion targetRotation = Quaternion.LookRotation(navMeshAgent.velocity);
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, 0.1f);
-        }
+        // Движение к целевой позиции (игнорируем разницу по Y, высота фиксируется отдельно)
+        Vector3 moveDir = (targetPos - transform.position);
+        moveDir.y = 0f;
+        moveDir = moveDir.normalized;
 
-        Debug.Log($"{gameObject.name}: Подлетаю к игроку (NavMesh)... Расстояние: {distanceToTarget:F2}");
+        rb.linearVelocity = new Vector3(
+            moveDir.x * moveSpeed,
+            0f,                    // по Y не двигаем физикой, высота фиксируется вручную
+            moveDir.z * moveSpeed
+        );
+
+        // Debug.Log($"{gameObject.name}: Подлетаю к игроку... Расстояние: {distanceToTarget:F2}");
     }
 
     /// <summary>
@@ -121,58 +115,58 @@ public class DroneAI_NavMesh : MonoBehaviour
         if (playerTransform == null)
             return;
 
-        hoverTimer += Time.deltaTime;
-
-        // Орбитальное движение вокруг игрока
-        float angle = Time.time * 0.5f;
+        // Орбитальное движение вокруг игрока в одной высоте
+        float angle = Time.time * 0.5f; // медленная орбита вокруг игрока
         Vector3 orbitPos = new Vector3(
             Mathf.Cos(angle) * hoverDistance,
-            0,
+            0f,
             Mathf.Sin(angle) * hoverDistance
         );
 
-        // Добавляем качание (вверх-вниз)
-        float bobOffset = Mathf.Sin(hoverTimer * hoverBobSpeed) * hoverBobAmount;
-        Vector3 targetPos = playerTransform.position + orbitPos + Vector3.up * (hoverHeight + bobOffset);
+        Vector3 targetPos = playerTransform.position + orbitPos;
+        targetPos.y = fixedHeight; // фиксированная высота
 
-        // Проверяем позицию на NavMesh
-        if (navMeshAgent != null && navMeshAgent.enabled)
+        // Плавное движение к целевой позиции (в плоскости XZ)
+        Vector3 moveDir = (targetPos - transform.position);
+        moveDir.y = 0f;
+        float distanceToTarget = moveDir.magnitude;
+
+        // Если дрон слишком далеко отошёл → возвращаемся в режим подлёта
+        if (distanceToTarget > hoverDistance + stoppingDistance + 2f)
         {
-            if (NavMesh.SamplePosition(targetPos, out NavMeshHit hit, 5f, NavMesh.AllAreas))
-            {
-                navMeshAgent.SetDestination(hit.position);
-            }
-
-            float distanceToTarget = Vector3.Distance(transform.position, targetPos);
-
-            // Если слишком далеко отошёл → возвращаемся в режим подлёта
-            if (distanceToTarget > hoverDistance + stoppingDistance + 3f)
-            {
-                currentState = DroneState.Approaching;
-                return;
-            }
-
-            // Плавное движение
-            if (navMeshAgent.velocity.magnitude > 0.01f)
-            {
-                Quaternion targetRotation = Quaternion.LookRotation(navMeshAgent.velocity);
-                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, 0.1f);
-            }
+            currentState = DroneState.Approaching;
+            return;
         }
 
-        // Смотрим на игрока
-        Vector3 lookDirection = (playerTransform.position - transform.position).normalized;
-        if (lookDirection != Vector3.zero)
-        {
-            Quaternion aimRotation = Quaternion.LookRotation(lookDirection);
-            // Медленнее смотрим на игрока, чтобы не спешить
-            transform.rotation = Quaternion.Slerp(transform.rotation, aimRotation, 0.05f);
-        }
+        moveDir = moveDir.normalized;
+
+        Vector3 targetVelocity = new Vector3(
+            moveDir.x * moveSpeed * 0.5f,
+            0f,
+            moveDir.z * moveSpeed * 0.5f
+        );
+
+        rb.linearVelocity = Vector3.Lerp(rb.linearVelocity, targetVelocity, hoverSmoothing);
     }
 
     /// <summary>
-    /// Получить направление на игрока для стрельбы
+    /// Всегда смотреть на игрока
     /// </summary>
+    private void LookAtPlayer()
+    {
+        if (playerTransform == null)
+            return;
+
+        Vector3 lookDirection = (playerTransform.position - transform.position);
+        lookDirection.y = 0f; // не наклоняемся по вертикали
+
+        if (lookDirection.sqrMagnitude > 0.0001f)
+        {
+            Quaternion targetRotation = Quaternion.LookRotation(lookDirection.normalized, Vector3.up);
+            transform.rotation = targetRotation;
+        }
+    }
+
     public Vector3 GetAimDirection()
     {
         if (playerTransform == null)
@@ -181,61 +175,44 @@ public class DroneAI_NavMesh : MonoBehaviour
         return (playerTransform.position - transform.position).normalized;
     }
 
-    /// <summary>
-    /// Проверить находится ли игрок в диапазоне атаки
-    /// </summary>
     public bool IsPlayerInAttackRange()
     {
         if (playerTransform == null)
             return false;
 
-        float distanceToPlayer = Vector3.Distance(transform.position, playerTransform.position);
+        float distanceToPlayer = Vector3.Distance(
+            new Vector3(transform.position.x, 0f, transform.position.z),
+            new Vector3(playerTransform.position.x, 0f, playerTransform.position.z)
+        );
+
         return distanceToPlayer <= attackRangeDistance && currentState == DroneState.Hovering;
     }
 
-    /// <summary>
-    /// Дрон получил урон
-    /// </summary>
     public void TakeDamage()
     {
-        if (rb != null)
-            rb.linearVelocity += Random.insideUnitSphere * 2f;
+        // Небольшой толчок при попадании (только по XZ)
+        Vector3 impulse = Random.insideUnitSphere * 2f;
+        impulse.y = 0f;
+        rb.linearVelocity += impulse;
     }
 
-    /// <summary>
-    /// Дрон умер
-    /// </summary>
     public void Die()
     {
         currentState = DroneState.Dead;
-        
-        if (navMeshAgent != null)
-            navMeshAgent.enabled = false;
-        
-        if (rb != null)
-        {
-            rb.linearVelocity = Vector3.zero;
-            rb.isKinematic = true;
-        }
-
-        Debug.Log($"{gameObject.name}: Дрон уничтожен!");
+        rb.linearVelocity = Vector3.zero;
+        rb.isKinematic = true;
     }
 
-    /// <summary>
-    /// Визуализация для отладки
-    /// </summary>
     void OnDrawGizmosSelected()
     {
-        // Радиус парения
         Gizmos.color = Color.yellow;
-        Gizmos.DrawWireSphere(transform.position, hoverDistance);
+        Gizmos.DrawWireSphere(new Vector3(transform.position.x, fixedHeight, transform.position.z), hoverDistance);
 
-        // Радиус атаки
         Gizmos.color = Color.red;
-        Gizmos.DrawWireSphere(transform.position, attackRangeDistance);
+        Gizmos.DrawWireSphere(new Vector3(transform.position.x, fixedHeight, transform.position.z), attackRangeDistance);
 
-        // Высота парения
         Gizmos.color = Color.blue;
-        Gizmos.DrawLine(transform.position, transform.position + Vector3.up * hoverHeight);
+        Vector3 from = new Vector3(transform.position.x, fixedHeight, transform.position.z);
+        Gizmos.DrawLine(from, from + Vector3.up * 0.5f);
     }
 }

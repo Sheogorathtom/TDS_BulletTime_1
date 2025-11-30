@@ -2,8 +2,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// Обновленный скрипт стрельбы игрока с поддержкой перезарядки
-/// Интегрирует PlayerShooting, AmmoSystem и обработку input'а
+/// Стрельба игрока + перезарядка
 /// </summary>
 public class PlayerShooting : MonoBehaviour
 {
@@ -21,54 +20,52 @@ public class PlayerShooting : MonoBehaviour
             Debug.LogWarning("AmmoSystem не найдена!");
     }
 
-    // ===== INPUT SYSTEM CALLBACKS =====
-
     /// <summary>
-    /// Callback для стрельбы
-    /// Input System путь: Action "Shoot" → LMB или какая-то другая клавиша
+    /// Input System: Action "Shoot"
     /// </summary>
     public void OnShoot(InputAction.CallbackContext context)
     {
         if (context.performed)
         {
-            currentWeapon?.TryShoot();
+            bool shotDone = false;
+
+            if (currentWeapon != null)
+            {
+                // если в TryShoot возвращается bool — используй:
+                // shotDone = currentWeapon.TryShoot();
+                // если нет — просто вызываем и считаем что выстрел есть:
+                currentWeapon.TryShoot();
+                shotDone = true;
+            }
+
+            if (shotDone && CameraShaker.Instance != null)
+            {
+                CameraShaker.Instance.Shake();        // или Shake(0.1f, 0.3f);
+            }
         }
     }
 
     /// <summary>
-    /// Callback для перезарядки
-    /// INPUT SYSTEM: Создай отдельное Action "Reload" с клавишей R
-    /// Путь: Input Asset → Add Action "Reload" → Binding R
+    /// Input System: Action "Reload"
     /// </summary>
     public void OnReload(InputAction.CallbackContext context)
     {
-        if (context.performed) // Срабатывает при нажатии клавиши R
+        if (context.performed)
         {
             ammoSystem?.StartReload();
         }
     }
 
-    // ===== МЕТОДЫ ДЛЯ UI =====
-
-    /// <summary>
-    /// Получить текущее количество патронов (для UI)
-    /// </summary>
     public int GetCurrentAmmo()
     {
         return ammoSystem?.GetCurrentAmmo() ?? 0;
     }
 
-    /// <summary>
-    /// Получить резервные патроны (для UI)
-    /// </summary>
     public int GetReserveAmmo()
     {
         return ammoSystem?.GetReserveAmmo() ?? 0;
     }
 
-    /// <summary>
-    /// Проверить, идёт ли перезарядка (для UI или анимаций)
-    /// </summary>
     public bool IsReloading()
     {
         return ammoSystem?.IsReloading() ?? false;

@@ -47,11 +47,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::WeaponBase
   damage: 10
-  fireRate: 0.5
+  fireRate: 0.1
   range: 100
   shootPoint: {fileID: 8747901018272252285}
-  Fire: {fileID: 0}
-  HitPoint: {fileID: 0}
+  stableForward: {fileID: 0}
+  Fire: {fileID: 7226583673155636401, guid: 1b0aae0b382915c498743efae6bc36f1, type: 3}
+  HitPoint: {fileID: 5024009746357069194, guid: 3eb968053d77f32429c16a8490d8f5b7, type: 3}
 --- !u!1 &3213389458853216588
 GameObject:
   m_ObjectHideFlags: 0

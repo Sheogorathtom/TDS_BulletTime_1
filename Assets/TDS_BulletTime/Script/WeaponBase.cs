@@ -8,7 +8,7 @@ public class WeaponBase : MonoBehaviour
 {
     [Header("Weapon Settings")]
     public float damage = 10f;
-    public float fireRate = 0.5f;
+    public float fireRate = 0.1f;
     public float range = 100f;
 
     [Header("Shoot Point")]
@@ -72,7 +72,7 @@ public class WeaponBase : MonoBehaviour
         if (Physics.Raycast(origin, direction, out hit, 100f))
         {
             Debug.DrawLine(origin, hit.point, Color.red, 10f);
-            
+            Debug.Log("Shoot in Weapon Base");
             if (Fire != null)
                 Instantiate(Fire, shootPoint.position, Quaternion.identity);
             

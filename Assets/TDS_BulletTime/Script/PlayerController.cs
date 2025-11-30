@@ -14,15 +14,28 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private Transform cursorFollower; // Объект, который следует за курсором
     [SerializeField] private float cursorFixedHeight = 1.5f; // Фиксированная высота (постоянная)
 
+    [Header("Dash Settings")]
+    [SerializeField] private float _dashSpeed = 20f;
+    [SerializeField] private float _dashDuration = 0.15f;
+    [SerializeField] private float _dashCooldown = 0.5f;
+
     private Vector2 _moveInput, _mouseLookInput;
     private Vector3 _rotationTarget;
     private Rigidbody _rb;
     private PlayerAnimationController _animationController;
+    private Health _health;
+
+    private bool _isDashing = false;
+    private bool _canDash = true;
+    private float _dashTimer = 0f;
+    private float _dashCooldownTimer = 0f;
+    private Vector3 _dashDirection;
 
     void Awake()
     {
         _rb = GetComponent<Rigidbody>();
         _animationController = GetComponentInChildren<PlayerAnimationController>();
+        _health = GetComponent<Health>();
     }
 
     public void OnMove(InputAction.CallbackContext context)
@@ -35,8 +48,45 @@ public class PlayerController : MonoBehaviour
         _mouseLookInput = context.ReadValue<Vector2>();
     }
 
+    public void OnDash(InputAction.CallbackContext context)
+    {
+        if (!context.performed) return;
+        if (!_canDash) return;
+
+        Vector3 movement = new Vector3(_moveInput.x, 0f, _moveInput.y);
+        if (movement.sqrMagnitude <= _deadZone * _deadZone) return;
+
+        _dashDirection = movement.normalized;
+        _isDashing = true;
+        _canDash = false;
+        _dashTimer = _dashDuration;
+
+        if (_health != null)
+            _health.SetInvulnerable(true);
+    }
+
     void FixedUpdate()
     {
+        // Обновление таймеров dash
+        if (_isDashing)
+        {
+            _dashTimer -= Time.fixedDeltaTime;
+            if (_dashTimer <= 0f)
+            {
+                _isDashing = false;
+                _dashCooldownTimer = _dashCooldown;
+
+                if (_health != null)
+                    _health.SetInvulnerable(false);
+            }
+        }
+        else if (!_canDash)
+        {
+            _dashCooldownTimer -= Time.fixedDeltaTime;
+            if (_dashCooldownTimer <= 0f)
+                _canDash = true;
+        }
+
         movePlayer();
 
         Ray ray = Camera.main.ScreenPointToRay(_mouseLookInput);
@@ -66,7 +116,12 @@ public class PlayerController : MonoBehaviour
         Vector3 movement = new Vector3(_moveInput.x, 0f, _moveInput.y);
         float inputMagnitude = movement.magnitude;
 
-        if (inputMagnitude > _deadZone)
+        if (_isDashing)
+        {
+            Vector3 newPosition = _rb.position + _dashDirection * _dashSpeed * Time.fixedDeltaTime;
+            _rb.MovePosition(newPosition);
+        }
+        else if (inputMagnitude > _deadZone)
         {
             Vector3 newPosition = _rb.position + movement * _speed * Time.fixedDeltaTime;
             _rb.MovePosition(newPosition);
@@ -74,7 +129,7 @@ public class PlayerController : MonoBehaviour
 
         if (_animationController != null)
         {
-            _animationController.UpdateSpeed(inputMagnitude);
+            _animationController.UpdateSpeed(_isDashing ? 1f : inputMagnitude);
             _animationController.UpdateDirection(movement);
         }
     }
@@ -91,5 +146,3 @@ public class PlayerController : MonoBehaviour
         }
     }
 }
-
-
